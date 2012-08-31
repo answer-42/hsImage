@@ -1,8 +1,9 @@
 module Main where
 
 {- 
-   Add error checking:
-   * Loading files -> stop with meaningful error if no image loaded
+   * Add error checking:
+   ** Loading files -> stop with meaningful error if no image loaded
+   * Restriced movement space in moveHor and moveVer
 -}
 
 import Graphics.UI.SDL
@@ -14,6 +15,8 @@ import Graphics.UI.SDL.TTF.Management
 import Graphics.UI.SDL.TTF.Render
 
 import System.Environment (getArgs)
+import System.FilePath (takeFileName)
+
 import Control.Monad (mapM, liftM)
 import Data.CircularList
 import Data.Maybe
@@ -25,6 +28,8 @@ windowheight = 0
 screenBpp    = 32
 
 textColor    = Color 0 0 0
+font         = "DejaVuSansMono.ttf"
+fontSize     = 15
 
 zoomStep     = 0.1 
 moveStep     = 30
@@ -39,7 +44,8 @@ data Config = Config {
       windowW         :: Int,
       windowH         :: Int,
       viewMode        :: Modes,
-      offset         :: (Int, Int)
+      offset          :: (Int, Int),
+      infoText        :: Bool
 }
  
 loadImage :: String -> IO Surface
@@ -61,13 +67,14 @@ applySurface x y src dst = blitSurface src Nothing dst offset
 fitImageRatio :: Config -> Double
 fitImageRatio env = if ratio1 < ratio2 then ratio1 else ratio2
     where
+      intDiv :: Int -> Int -> Double
       intDiv x y = fromIntegral x /  fromIntegral y
       image  = currentImage env      
       ratio1 = windowW env `intDiv` surfaceGetWidth image
       ratio2 = windowH env `intDiv` surfaceGetHeight image
 
 changeImage :: (CList String -> CList String) -> Config -> IO Config       
-changeImage op env = loadAdjustedImage env{imageList = op $ imageList env}
+changeImage op env = loadAdjustedImage env{imageList = op $ imageList env, offset = (0,0)}
 
 resize :: Config -> Int -> Int -> IO Config
 resize env w h = do s <- setVideoMode w h screenBpp [Resizable] 
@@ -90,12 +97,16 @@ zoomWith op env@Config {imageList=images, viewMode=(Zoom ratio origImage)} =
 zoomWith op env = zoomWith op env{viewMode = Zoom 1 (currentImage env)}
 
 moveHor :: (Int -> Int -> Int) -> Config -> IO Config
-moveHor op env = let oldOffset = offset env 
-                 in return env{offset =  ((fst oldOffset) `op` moveStep, snd oldOffset)} 
+moveHor op env = let oldOffset = offset env
+                     newOffset = ((fst oldOffset) `op` moveStep, snd oldOffset)
+                 in return env{offset = newOffset} 
 
 moveVer :: (Int -> Int -> Int) -> Config -> IO Config
 moveVer op env = let oldOffset = offset env 
-                 in return env{offset =  (fst oldOffset, (snd oldOffset) `op` moveStep)} 
+                 in return env{offset = (fst oldOffset, (snd oldOffset) `op` moveStep)} 
+
+switchInfo :: Config -> IO Config
+switchInfo env = return env{infoText = not $ infoText env}
 
 
 checkEvent :: Event-> Config -> IO ()
@@ -113,6 +124,7 @@ checkEvent event env = do env <- (case event of
                                           SDLK_d      -> moveHor (+) env -- move right
                                           SDLK_w      -> moveVer (-) env -- move up
                                           SDLK_s      -> moveVer (+) env -- move down
+                                          SDLK_t      -> switchInfo env
                                           _           -> return env
                                     (VideoResize width height) -> resize env width height >>= fitImage
                                     _ -> return env)
@@ -123,11 +135,14 @@ initEnv = do
   args      <- getArgs
   screen    <- setVideoMode windowWidth windowheight screenBpp [Resizable]
   imageList <- liftM (fromList . concat) $ mapM getImages args
-  image     <- loadImage $ fromJust $ focus imageList
+  image     <- loadImage $ fromJust $ focus imageList -- fromJust throws error if imageList is empty -> change it
   let windowW = surfaceGetWidth screen
       windowH = surfaceGetHeight screen
 
-  return (Config screen imageList image windowW windowH Full (0,0))
+  return (Config screen imageList image windowW windowH Full (0,0) False)
+
+-- getInfo :: Config -> IO String
+-- getInfo env = 
 
 loop :: Config -> IO ()
 loop env = do      
@@ -135,6 +150,16 @@ loop env = do
       fillRect (screen env) Nothing (Pixel 0)
       applySurface (fst $ offset env) (snd $ offset env) (currentImage env) (screen env)
       
+      {-
+        We have to abstract this nonsense away
+       -}
+      if infoText env
+      then do font <- openFont font fontSize
+              let fn = takeFileName $ fromJust $ focus $ imageList env 
+              infoText <- renderTextSolid font fn textColor 
+              applySurface 5 5 infoText (screen env)
+      else return False 
+
       Graphics.UI.SDL.flip (screen env)
       event <- waitEventBlocking  
       if isEmpty $ imageList env
