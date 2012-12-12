@@ -2,6 +2,10 @@ module ImageConfig where
 
 import Graphics.UI.SDL
 
+import Data.CircularList
+
+import Control.Monad.Reader
+
 windowWidth  = 0 :: Int
 windowheight = 0 :: Int
 screenBpp    = 32 :: Int
@@ -13,3 +17,18 @@ fontSize     = 15 :: Int
 zoomStep     = 0.1 :: Double
 moveStep     = 30 :: Int
 
+data Modes = Fit | Zoom Double Surface | Full
+           deriving (Eq)
+
+data Config = Config {
+      screen          :: Surface,
+      imageList       :: CList String,
+      currentImage    :: Surface,
+      windowW         :: Int,
+      windowH         :: Int,
+      viewMode        :: Modes,
+      offset          :: (Int, Int),
+      infoText        :: Bool
+}
+
+type ConfEnv = ReaderT Config IO Config 

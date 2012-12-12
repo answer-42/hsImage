@@ -18,7 +18,8 @@ import System.Environment (getArgs)
 import System.FilePath (takeFileName)
 
 import Control.Monad (mapM, liftM, unless)
-import Control.Monad.State
+import Control.Monad.Reader
+
 --import Control.Monad.Identity
 
 import Data.CircularList
@@ -27,29 +28,15 @@ import Data.Maybe
 import ImagePaths (getImages)
 import ImageConfig
 
-data Modes = Fit | Zoom Double Surface | Full
-           deriving (Eq)
-
-data Config = Config {
-      screen          :: Surface,
-      imageList       :: CList String,
-      currentImage    :: Surface,
-      windowW         :: Int,
-      windowH         :: Int,
-      viewMode        :: Modes,
-      offset          :: (Int, Int),
-      infoText        :: Bool
-}
- 
 loadImage :: String -> IO Surface
 loadImage filename = load filename >>= displayFormat
 
-loadAdjustedImage :: Config -> IO Config
-loadAdjustedImage env = do
-  oldImage <- loadImage $ fromJust $ focus $ imageList env
+loadAdjustedImage :: ConfEnv
+loadAdjustedImage = ask >>= \env -> do
+  oldImage <- liftIO $ loadImage $ fromJust $ focus $ imageList env
   case viewMode env of     
     Fit             -> let ratio = fitImageRatio env{currentImage = oldImage}
-                       in zoom oldImage ratio ratio False >>= \i -> return  env{currentImage = i}
+                       in liftIO $ zoom oldImage ratio ratio False >>= \i -> return env{currentImage = i}
     (Zoom ratio _)  -> return env{currentImage = oldImage, viewMode = Full}           
     _               -> return env{currentImage = oldImage}
 
@@ -66,63 +53,69 @@ fitImageRatio env = if ratio1 < ratio2 then ratio1 else ratio2
       ratio1 = windowW env `intDiv` surfaceGetWidth image
       ratio2 = windowH env `intDiv` surfaceGetHeight image
 
-changeImage :: (CList String -> CList String) -> Config -> IO Config       
-changeImage op env = loadAdjustedImage env{imageList = op $ imageList env, offset = (0,0)}
+changeImage :: (CList String -> CList String) -> ConfEnv
+changeImage op = ask >>= (\env -> return env{imageList = op $ imageList env, offset = (0,0)})
+                 >> loadAdjustedImage 
 
-resize :: Config -> Int -> Int -> IO Config
-resize env w h = do s <- setVideoMode w h screenBpp [Resizable] 
-                    return env{windowW = w, windowH = h, screen  = s}
+resize :: Int -> Int -> ConfEnv
+resize w h = do env <- ask 
+                s <- liftIO $ setVideoMode w h screenBpp [Resizable] 
+                return env{windowW = w, windowH = h, screen  = s}
 
-fitImage :: Config -> IO Config
-fitImage env = do let ratio = fitImageRatio env
-                  i <- zoom (currentImage env) ratio ratio False
-                  return env{viewMode = Fit, currentImage = i, offset = (0,0) } 
+fitImage :: ConfEnv
+fitImage = do env <- ask
+              let ratio = fitImageRatio env
+              i <- liftIO $ zoom (currentImage env) ratio ratio False
+              return env{viewMode = Fit, currentImage = i, offset = (0,0) } 
 
-fullImage :: Config -> IO Config
-fullImage env = do i <- loadImage (fromJust . focus . imageList $ env)
-                   return env{viewMode = Full, currentImage = i}
+fullImage :: ConfEnv
+fullImage = ask >>= \env -> (do i <- liftIO $ loadImage (fromJust . focus . imageList $ env)
+                                return env{viewMode = Full, currentImage = i})
 
-zoomWith :: (Double -> Double -> Double) -> Config -> IO Config
-zoomWith op env@Config {imageList=images, viewMode=(Zoom ratio origImage)} = 
-    do let newRatio = ratio `op` zoomStep
-       newImage <- zoom origImage newRatio newRatio False
-       return env{viewMode = Zoom newRatio origImage, currentImage = newImage}                                  
-zoomWith op env = zoomWith op env{viewMode = Zoom 1 (currentImage env)}
+zoomWith :: (Double -> Double -> Double) -> ConfEnv
+zoomWith op = do env <- ask
+                 case env of
+                   Config {imageList=images, viewMode=(Zoom ratio origImage)}
+                       -> do let newRatio = ratio `op` zoomStep
+                             newImage <- liftIO $ zoom origImage newRatio newRatio False
+                             return env{viewMode = Zoom newRatio origImage, currentImage = newImage}
+                   _   -> return env{viewMode = Zoom 1 (currentImage env)} >> zoomWith op 
 
-moveHor :: (Int -> Int -> Int) -> Config -> IO Config
-moveHor op env = let oldOffset = offset env
-                     newOffset = (fst oldOffset `op` moveStep, snd oldOffset)
-                 in return env{offset = newOffset} 
+moveHor :: (Int -> Int -> Int) -> ConfEnv
+moveHor op = do env <- ask
+                let oldOffset = offset env
+                let newOffset = (fst oldOffset `op` moveStep, snd oldOffset)
+                return env{offset = newOffset} 
 
-moveVer :: (Int -> Int -> Int) -> Config -> IO Config
-moveVer op env = let oldOffset = offset env 
-                 in return env{offset = (fst oldOffset, snd oldOffset `op` moveStep)} 
+moveVer :: (Int -> Int -> Int) -> ConfEnv
+moveVer op = ask >>= \env -> let oldOffset = offset env 
+                             in return env{offset = (fst oldOffset, snd oldOffset `op` moveStep)} 
 
 -- switchInfo :: Config -> IO Config
 -- switchInfo env = return env{infoText = not $ infoText env}
 
-
-checkEvent :: Event-> Config -> IO ()
-checkEvent event env = do env <- case event of 
-                                    (KeyDown (Keysym key _ _)) -> 
-                                        case key of
-                                          SDLK_ESCAPE -> return env{imageList=empty} 
-                                          SDLK_RIGHT  -> changeImage rotR env
-                                          SDLK_LEFT   -> changeImage rotL env
-                                          SDLK_f      -> fitImage env
-                                          SDLK_v      -> fullImage env
-                                          SDLK_i      -> zoomWith (+) env
-                                          SDLK_o      -> zoomWith (-) env
-                                          SDLK_a      -> moveHor (-) env -- move left
-                                          SDLK_d      -> moveHor (+) env -- move right
-                                          SDLK_w      -> moveVer (-) env -- move up
-                                          SDLK_s      -> moveVer (+) env -- move down
-   --                                       SDLK_t      -> switchInfo env
-                                          _           -> return env
-                                    (VideoResize width height) -> resize env width height >>= fitImage
-                                    _ -> return env
-                          loop env
-
+checkEvent :: Event -> ConfEnv
+checkEvent event = do
+  env <- ask
+  case event of 
+    (KeyDown (Keysym key _ _)) -> 
+        case key of
+          SDLK_ESCAPE -> return env{imageList=empty}
+          SDLK_RIGHT  -> changeImage rotR
+          SDLK_LEFT   -> changeImage rotL
+          SDLK_f      -> fitImage
+          SDLK_v      -> fullImage
+          SDLK_i      -> zoomWith (+)
+          SDLK_o      -> zoomWith (-)
+          SDLK_a      -> moveHor (-) -- move left
+          SDLK_d      -> moveHor (+) -- move right
+          SDLK_w      -> moveVer (-) -- move up
+          SDLK_s      -> moveVer (+) -- move down
+                 --                                       SDLK_t      -> switchInfo env
+          _           -> return env
+    (VideoResize width height) -> resize width height >> fitImage
+    _                          -> return env
+                   
 initEnv :: IO Config
 initEnv = do
   args      <- getArgs
@@ -133,11 +126,12 @@ initEnv = do
       windowH = surfaceGetHeight screen
   return (Config screen imageList image windowW windowH Full (0,0) False)
 
-loop :: Config -> IO ()
-loop env = do
+loop :: ConfEnv
+loop = do
+      env <- ask
       -- Clear screen
-      fillRect (screen env) Nothing (Pixel 0)
-      uncurry applySurface (offset env) (currentImage env) (screen env)
+      liftIO $ fillRect (screen env) Nothing (Pixel 0)
+      liftIO $ uncurry applySurface (offset env) (currentImage env) (screen env)
       
       {-
         We have to abstract this nonsense away and add some more useull output ;)
@@ -152,12 +146,14 @@ loop env = do
       else return False 
       -}
 
-      Graphics.UI.SDL.flip (screen env)
-      event <- waitEventBlocking  
-      unless (isEmpty $ imageList env) $  checkEvent event env
+      liftIO $ Graphics.UI.SDL.flip $ screen env 
+      event <- liftIO waitEventBlocking  
+      if not (isEmpty $ imageList env) 
+      then checkEvent event >> loop
+      else return env
 
-main :: IO ()        
+main :: IO Config        
 main = withInit [InitEverything] $ do
          env <- initEnv
-         -- TTFG.init >> loop env
-         loop env
+       -- TTFG.init >> loop env
+         runReaderT loop env
