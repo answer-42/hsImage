@@ -31,14 +31,14 @@ import ImageConfig
 loadImage :: String -> IO Surface
 loadImage filename = load filename >>= displayFormat
 
-loadAdjustedImage :: ConfEnv
+loadAdjustedImage :: StateT Config IO ()
 loadAdjustedImage = get >>= \env -> do
-  oldImage <- liftIO $ loadImage $ fromJust $ focus $ imageList env
+  oldImage <- liftIO $ loadImage . fromJust . focus . imageList $ env
   case viewMode env of     
     Fit             -> let ratio = fitImageRatio env{currentImage = oldImage}
-                       in liftIO $ zoom oldImage ratio ratio False >>= \i -> return env{currentImage = i}
-    (Zoom ratio _)  -> return env{currentImage = oldImage, viewMode = Full}           
-    _               -> return env{currentImage = oldImage}
+                       in (liftIO $ zoom oldImage ratio ratio False) >>= \i -> put env{currentImage = i}
+    (Zoom ratio _)  -> put env{currentImage = oldImage, viewMode = Full}           
+    _               -> put env{currentImage = oldImage}
 
 applySurface :: Int -> Int -> Surface -> Surface -> IO Bool
 applySurface x y src dst = blitSurface src Nothing dst offset
@@ -53,54 +53,54 @@ fitImageRatio env = if ratio1 < ratio2 then ratio1 else ratio2
       ratio1 = windowW env `intDiv` surfaceGetWidth image
       ratio2 = windowH env `intDiv` surfaceGetHeight image
 
-changeImage :: (CList String -> CList String) -> ConfEnv
+changeImage :: (CList String -> CList String) -> StateT Config IO ()
 changeImage op = get >>= (\env -> return env{imageList = op $ imageList env, offset = (0,0)})
                  >> loadAdjustedImage 
 
-resize :: Int -> Int -> ConfEnv
+resize :: Int -> Int -> StateT Config IO ()
 resize w h = do env <- get 
                 s <- liftIO $ setVideoMode w h screenBpp [Resizable] 
-                return env{windowW = w, windowH = h, screen  = s}
+                put env{windowW = w, windowH = h, screen  = s}
 
-fitImage :: ConfEnv
+fitImage :: StateT Config IO ()
 fitImage = do env <- get
               let ratio = fitImageRatio env
               i <- liftIO $ zoom (currentImage env) ratio ratio False
-              return env{viewMode = Fit, currentImage = i, offset = (0,0) } 
+              put env{viewMode = Fit, currentImage = i, offset = (0,0) } 
 
-fullImage :: ConfEnv
+fullImage :: StateT Config IO ()
 fullImage = get >>= \env -> (do i <- liftIO $ loadImage (fromJust . focus . imageList $ env)
-                                return env{viewMode = Full, currentImage = i})
+                                put env{viewMode = Full, currentImage = i})
 
-zoomWith :: (Double -> Double -> Double) -> ConfEnv
+zoomWith :: (Double -> Double -> Double) -> StateT Config IO ()
 zoomWith op = do env <- get
                  case env of
                    Config {imageList=images, viewMode=(Zoom ratio origImage)}
                        -> do let newRatio = ratio `op` zoomStep
                              newImage <- liftIO $ zoom origImage newRatio newRatio False
-                             return env{viewMode = Zoom newRatio origImage, currentImage = newImage}
-                   _   -> return env{viewMode = Zoom 1 (currentImage env)} >> zoomWith op 
+                             put env{viewMode = Zoom newRatio origImage, currentImage = newImage}
+                   _   -> put env{viewMode = Zoom 1 (currentImage env)} >> zoomWith op 
 
-moveHor :: (Int -> Int -> Int) -> ConfEnv
+moveHor :: (Int -> Int -> Int) -> StateT Config IO ()
 moveHor op = do env <- get
                 let oldOffset = offset env
                 let newOffset = (fst oldOffset `op` moveStep, snd oldOffset)
-                return env{offset = newOffset} 
+                put env{offset = newOffset} 
 
-moveVer :: (Int -> Int -> Int) -> ConfEnv
+moveVer :: (Int -> Int -> Int) -> StateT Config IO ()
 moveVer op = get >>= \env -> let oldOffset = offset env 
-                             in return env{offset = (fst oldOffset, snd oldOffset `op` moveStep)} 
+                             in put env{offset = (fst oldOffset, snd oldOffset `op` moveStep)} 
 
 -- switchInfo :: Config -> IO Config
 -- switchInfo env = return env{infoText = not $ infoText env}
 
-checkEvent :: Event -> ConfEnv
+checkEvent :: Event -> StateT Config IO ()
 checkEvent event = do
   env <- get
   case event of 
     (KeyDown (Keysym key _ _)) -> 
         case key of
-          SDLK_ESCAPE -> return env{imageList=empty}
+          SDLK_ESCAPE -> put env{imageList=empty}
           SDLK_RIGHT  -> changeImage rotR
           SDLK_LEFT   -> changeImage rotL
           SDLK_f      -> fitImage
@@ -112,9 +112,9 @@ checkEvent event = do
           SDLK_w      -> moveVer (-) -- move up
           SDLK_s      -> moveVer (+) -- move down
                  --                                       SDLK_t      -> switchInfo env
-          _           -> return env
+          _           ->  return ()
     (VideoResize width height) -> resize width height >> fitImage
-    _                          -> return env
+    _                          -> return ()
                    
 initEnv :: IO Config
 initEnv = do
