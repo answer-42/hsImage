@@ -18,7 +18,7 @@ import System.Environment (getArgs)
 import System.FilePath (takeFileName)
 
 import Control.Monad (mapM, liftM, unless)
-import Control.Monad.Reader
+import Control.Monad.State.Lazy
 
 --import Control.Monad.Identity
 
@@ -32,7 +32,7 @@ loadImage :: String -> IO Surface
 loadImage filename = load filename >>= displayFormat
 
 loadAdjustedImage :: ConfEnv
-loadAdjustedImage = ask >>= \env -> do
+loadAdjustedImage = get >>= \env -> do
   oldImage <- liftIO $ loadImage $ fromJust $ focus $ imageList env
   case viewMode env of     
     Fit             -> let ratio = fitImageRatio env{currentImage = oldImage}
@@ -54,26 +54,26 @@ fitImageRatio env = if ratio1 < ratio2 then ratio1 else ratio2
       ratio2 = windowH env `intDiv` surfaceGetHeight image
 
 changeImage :: (CList String -> CList String) -> ConfEnv
-changeImage op = ask >>= (\env -> return env{imageList = op $ imageList env, offset = (0,0)})
+changeImage op = get >>= (\env -> return env{imageList = op $ imageList env, offset = (0,0)})
                  >> loadAdjustedImage 
 
 resize :: Int -> Int -> ConfEnv
-resize w h = do env <- ask 
+resize w h = do env <- get 
                 s <- liftIO $ setVideoMode w h screenBpp [Resizable] 
                 return env{windowW = w, windowH = h, screen  = s}
 
 fitImage :: ConfEnv
-fitImage = do env <- ask
+fitImage = do env <- get
               let ratio = fitImageRatio env
               i <- liftIO $ zoom (currentImage env) ratio ratio False
               return env{viewMode = Fit, currentImage = i, offset = (0,0) } 
 
 fullImage :: ConfEnv
-fullImage = ask >>= \env -> (do i <- liftIO $ loadImage (fromJust . focus . imageList $ env)
+fullImage = get >>= \env -> (do i <- liftIO $ loadImage (fromJust . focus . imageList $ env)
                                 return env{viewMode = Full, currentImage = i})
 
 zoomWith :: (Double -> Double -> Double) -> ConfEnv
-zoomWith op = do env <- ask
+zoomWith op = do env <- get
                  case env of
                    Config {imageList=images, viewMode=(Zoom ratio origImage)}
                        -> do let newRatio = ratio `op` zoomStep
@@ -82,13 +82,13 @@ zoomWith op = do env <- ask
                    _   -> return env{viewMode = Zoom 1 (currentImage env)} >> zoomWith op 
 
 moveHor :: (Int -> Int -> Int) -> ConfEnv
-moveHor op = do env <- ask
+moveHor op = do env <- get
                 let oldOffset = offset env
                 let newOffset = (fst oldOffset `op` moveStep, snd oldOffset)
                 return env{offset = newOffset} 
 
 moveVer :: (Int -> Int -> Int) -> ConfEnv
-moveVer op = ask >>= \env -> let oldOffset = offset env 
+moveVer op = get >>= \env -> let oldOffset = offset env 
                              in return env{offset = (fst oldOffset, snd oldOffset `op` moveStep)} 
 
 -- switchInfo :: Config -> IO Config
@@ -96,7 +96,7 @@ moveVer op = ask >>= \env -> let oldOffset = offset env
 
 checkEvent :: Event -> ConfEnv
 checkEvent event = do
-  env <- ask
+  env <- get
   case event of 
     (KeyDown (Keysym key _ _)) -> 
         case key of
@@ -128,7 +128,7 @@ initEnv = do
 
 loop :: ConfEnv
 loop = do
-      env <- ask
+      env <- get
       -- Clear screen
       liftIO $ fillRect (screen env) Nothing (Pixel 0)
       liftIO $ uncurry applySurface (offset env) (currentImage env) (screen env)
@@ -152,8 +152,8 @@ loop = do
       then checkEvent event >> loop
       else return env
 
-main :: IO Config        
+main :: IO (Config, Config)        
 main = withInit [InitEverything] $ do
          env <- initEnv
        -- TTFG.init >> loop env
-         runReaderT loop env
+         runStateT loop env

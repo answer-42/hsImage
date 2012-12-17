@@ -4,7 +4,7 @@ import Graphics.UI.SDL
 
 import Data.CircularList
 
-import Control.Monad.Reader
+import Control.Monad.State.Lazy
 
 windowWidth  = 0 :: Int
 windowheight = 0 :: Int
@@ -31,4 +31,4 @@ data Config = Config {
       infoText        :: Bool
 }
 
-type ConfEnv = ReaderT Config IO Config 
+type ConfEnv = StateT Config IO Config 
