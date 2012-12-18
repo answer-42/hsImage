@@ -55,7 +55,7 @@ fitImageRatio env = if ratio1 < ratio2 then ratio1 else ratio2
       ratio2 = windowH env `intDiv` surfaceGetHeight image
 
 changeImage :: (CList String -> CList String) -> ConfState
-changeImage op = get >>= (\env -> return env{imageList = op $ imageList env, offset = (0,0)})
+changeImage op = get >>= \env -> return env{imageList = op $ imageList env, offset = (0,0)}
                  >> loadAdjustedImage 
 
 resize :: Int -> Int -> ConfState
@@ -84,10 +84,8 @@ zoomWith op = do env <- get
                    _   -> put env{viewMode = Zoom 1 (currentImage env)} >> zoomWith op 
 
 moveHor :: (Int -> Int -> Int) -> ConfState
-moveHor op = do env <- get
-                let oldOffset = offset env
-                let newOffset = (fst oldOffset `op` moveStep, snd oldOffset)
-                put env{offset = newOffset} 
+moveHor op = get >>= \env -> let oldOffset = offset env
+                             in put env{offset = (fst oldOffset `op` moveStep, snd oldOffset)}
 
 moveVer :: (Int -> Int -> Int) -> ConfState
 moveVer op = get >>= \env -> let oldOffset = offset env 
@@ -126,16 +124,20 @@ initEnv = do
   image     <- loadImage $ fromJust $ focus imageList
   let windowW = surfaceGetWidth screen
       windowH = surfaceGetHeight screen
-  return (Config screen imageList image windowW windowH Full (0,0) False)
+  return $ Config screen imageList image windowW windowH Full (0,0) False
 
 loop :: ConfState
 loop = do
       env <- get
       -- Clear screen
-      liftIO $ fillRect (screen env) Nothing (Pixel 0)
-      liftIO $ uncurry applySurface (offset env) (currentImage env) (screen env)
-      
-      {-
+      liftIO (fillRect (screen env) Nothing (Pixel 0) 
+              >> uncurry applySurface (offset env) (currentImage env) (screen env)
+              -- Here we will put info text etc.
+              >> Graphics.UI.SDL.flip (screen env))
+      unless (isEmpty . imageList $ env) 
+       (liftIO waitEventBlocking >>= checkEvent >> loop)
+
+     {-
         We have to abstract this nonsense away and add some more useull output ;)
  
       -}
@@ -148,12 +150,8 @@ loop = do
       else return False 
       -}
 
-      liftIO $ Graphics.UI.SDL.flip $ screen env 
-      event <- liftIO waitEventBlocking  
-      if not (isEmpty $ imageList env) 
-      then checkEvent event >> loop
-      else return ()
-
+      
+ 
 main :: IO ()        
-main = withInit [InitEverything] $ initEnv >>= (runStateT loop) >> return ()
+main = withInit [InitEverything] $ void (initEnv >>= runStateT loop)
 
