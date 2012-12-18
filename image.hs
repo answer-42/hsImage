@@ -49,7 +49,7 @@ fitImageRatio :: Config -> Double
 fitImageRatio env = if ratio1 < ratio2 then ratio1 else ratio2
     where
       intDiv :: Int -> Int -> Double
-      intDiv x y = fromIntegral x / fromIntegral y
+      intDiv x y = fromIntegral (x `div` y)
       image  = currentImage env      
       ratio1 = windowW env `intDiv` surfaceGetWidth image
       ratio2 = windowH env `intDiv` surfaceGetHeight image
@@ -121,9 +121,9 @@ initEnv = do
   args      <- getArgs
   screen    <- setVideoMode windowWidth windowheight screenBpp [Resizable]
   imageList <- liftM (fromList . concat) $ mapM getImages args
-  image     <- loadImage $ fromJust $ focus imageList
   let windowW = surfaceGetWidth screen
       windowH = surfaceGetHeight screen
+  image     <- loadImage $ fromJust $ focus imageList                    
   return $ Config screen imageList image windowW windowH Full (0,0) False
 
 loop :: ConfState

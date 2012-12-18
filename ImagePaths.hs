@@ -1,13 +1,14 @@
 module ImagePaths where
 
-
 import System.Directory (doesDirectoryExist, getDirectoryContents)
 import System.FilePath ((</>), takeExtension)
 
 import Control.Monad (forM)
 
-
 import Data.List (isSuffixOf)
+
+filterm :: Monad m => (a -> Bool) -> m [a] -> m [a]
+filterm p x = x >>= \xs -> return $ filter p xs
 
 imageExtensions = [".jpg",".png"]
 
@@ -29,9 +30,11 @@ getRecursiveFiles topdir = do
              a lot of images.
 --}
 getImages :: String -> IO [String]
-getImages toplevel = do
-  files <- getRecursiveFiles toplevel 
-  return (filter isImage files)
+getImages arg = do
+  isDirectory <- doesDirectoryExist arg
+  if isDirectory
+  then filterm isImage $ getRecursiveFiles arg
+  else return $ filter isImage $ words arg
     where
       isImage :: String -> Bool
       isImage s = any (`isSuffixOf` s) imageExtensions
