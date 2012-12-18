@@ -29,7 +29,7 @@ import ImagePaths (getImages)
 import ImageConfig
 
 loadImage :: String -> IO Surface
-loadImage filename = load filename >>= displayFormat
+loadImage filename = load filename >>= displayFormat 
 
 loadAdjustedImage :: ConfState
 loadAdjustedImage = do
@@ -55,23 +55,23 @@ fitImageRatio env = if ratio1 < ratio2 then ratio1 else ratio2
       ratio2 = windowH env `intDiv` surfaceGetHeight image
 
 changeImage :: (CList String -> CList String) -> ConfState
-changeImage op = get >>= \env -> return env{imageList = op $ imageList env, offset = (0,0)}
+changeImage op = get >>= \env -> put env{imageList = op $ imageList env, offset = (0,0)}
                  >> loadAdjustedImage 
 
 resize :: Int -> Int -> ConfState
 resize w h = do env <- get 
-                s <- liftIO $ setVideoMode w h screenBpp [Resizable] 
+                s   <- liftIO $ setVideoMode w h screenBpp [Resizable] 
                 put env{windowW = w, windowH = h, screen  = s}
 
 fitImage :: ConfState
 fitImage = do env <- get
               let ratio = fitImageRatio env
-              i <- liftIO $ zoom (currentImage env) ratio ratio False
-              put env{viewMode = Fit, currentImage = i, offset = (0,0) } 
+              i   <- liftIO $ zoom (currentImage env) ratio ratio False
+              put env{viewMode = Fit, currentImage = i, offset = (0,0)} 
 
 fullImage :: ConfState
 fullImage = do env <- get
-               i <- liftIO $ loadImage (fromJust . focus . imageList $ env)
+               i   <- liftIO $ loadImage (fromJust . focus . imageList $ env)
                put env{viewMode = Full, currentImage = i}
 
 zoomWith :: (Double -> Double -> Double) -> ConfState
@@ -150,8 +150,7 @@ loop = do
       else return False 
       -}
 
-      
- 
+       
 main :: IO ()        
 main = withInit [InitEverything] $ void (initEnv >>= runStateT loop)
 
