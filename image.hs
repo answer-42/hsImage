@@ -88,11 +88,13 @@ moveHor op = get >>= \env -> let oldOffset = offset env
                              in put env{offset = (fst oldOffset `op` moveStep, snd oldOffset)}
 
 moveVer :: (Int -> Int -> Int) -> ConfState
-moveVer op = get >>= \env -> let oldOffset = offset env 
-                             in put env{offset = (fst oldOffset, snd oldOffset `op` moveStep)} 
+moveVer op = get >>= \env -> let oldOffset = offset env
+                                 newOffset = (fst oldOffset, snd oldOffset `op` moveStep)
+                                 -- TODO Add Check
+                             in put env{offset = newOffset} 
 
--- switchInfo :: Config -> IO Config
--- switchInfo env = return env{infoText = not $ infoText env}
+-- switchInfo :: IO Config
+-- switchInfo = ask >>= \env -> return env{infoText = not $ infoText env}
 
 checkEvent :: Event -> ConfState
 checkEvent event = do
