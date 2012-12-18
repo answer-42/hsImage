@@ -31,12 +31,13 @@ import ImageConfig
 loadImage :: String -> IO Surface
 loadImage filename = load filename >>= displayFormat
 
-loadAdjustedImage :: StateT Config IO ()
-loadAdjustedImage = get >>= \env -> do
+loadAdjustedImage :: ConfState
+loadAdjustedImage = do
+  env <- get
   oldImage <- liftIO $ loadImage . fromJust . focus . imageList $ env
   case viewMode env of     
     Fit             -> let ratio = fitImageRatio env{currentImage = oldImage}
-                       in (liftIO $ zoom oldImage ratio ratio False) >>= \i -> put env{currentImage = i}
+                       in liftIO (zoom oldImage ratio ratio False) >>= \i -> put env{currentImage = i}
     (Zoom ratio _)  -> put env{currentImage = oldImage, viewMode = Full}           
     _               -> put env{currentImage = oldImage}
 
@@ -48,31 +49,32 @@ fitImageRatio :: Config -> Double
 fitImageRatio env = if ratio1 < ratio2 then ratio1 else ratio2
     where
       intDiv :: Int -> Int -> Double
-      intDiv x y = fromIntegral x /  fromIntegral y
+      intDiv x y = fromIntegral x / fromIntegral y
       image  = currentImage env      
       ratio1 = windowW env `intDiv` surfaceGetWidth image
       ratio2 = windowH env `intDiv` surfaceGetHeight image
 
-changeImage :: (CList String -> CList String) -> StateT Config IO ()
+changeImage :: (CList String -> CList String) -> ConfState
 changeImage op = get >>= (\env -> return env{imageList = op $ imageList env, offset = (0,0)})
                  >> loadAdjustedImage 
 
-resize :: Int -> Int -> StateT Config IO ()
+resize :: Int -> Int -> ConfState
 resize w h = do env <- get 
                 s <- liftIO $ setVideoMode w h screenBpp [Resizable] 
                 put env{windowW = w, windowH = h, screen  = s}
 
-fitImage :: StateT Config IO ()
+fitImage :: ConfState
 fitImage = do env <- get
               let ratio = fitImageRatio env
               i <- liftIO $ zoom (currentImage env) ratio ratio False
               put env{viewMode = Fit, currentImage = i, offset = (0,0) } 
 
-fullImage :: StateT Config IO ()
-fullImage = get >>= \env -> (do i <- liftIO $ loadImage (fromJust . focus . imageList $ env)
-                                put env{viewMode = Full, currentImage = i})
+fullImage :: ConfState
+fullImage = do env <- get
+               i <- liftIO $ loadImage (fromJust . focus . imageList $ env)
+               put env{viewMode = Full, currentImage = i}
 
-zoomWith :: (Double -> Double -> Double) -> StateT Config IO ()
+zoomWith :: (Double -> Double -> Double) -> ConfState
 zoomWith op = do env <- get
                  case env of
                    Config {imageList=images, viewMode=(Zoom ratio origImage)}
@@ -81,20 +83,20 @@ zoomWith op = do env <- get
                              put env{viewMode = Zoom newRatio origImage, currentImage = newImage}
                    _   -> put env{viewMode = Zoom 1 (currentImage env)} >> zoomWith op 
 
-moveHor :: (Int -> Int -> Int) -> StateT Config IO ()
+moveHor :: (Int -> Int -> Int) -> ConfState
 moveHor op = do env <- get
                 let oldOffset = offset env
                 let newOffset = (fst oldOffset `op` moveStep, snd oldOffset)
                 put env{offset = newOffset} 
 
-moveVer :: (Int -> Int -> Int) -> StateT Config IO ()
+moveVer :: (Int -> Int -> Int) -> ConfState
 moveVer op = get >>= \env -> let oldOffset = offset env 
                              in put env{offset = (fst oldOffset, snd oldOffset `op` moveStep)} 
 
 -- switchInfo :: Config -> IO Config
 -- switchInfo env = return env{infoText = not $ infoText env}
 
-checkEvent :: Event -> StateT Config IO ()
+checkEvent :: Event -> ConfState
 checkEvent event = do
   env <- get
   case event of 
@@ -126,7 +128,7 @@ initEnv = do
       windowH = surfaceGetHeight screen
   return (Config screen imageList image windowW windowH Full (0,0) False)
 
-loop :: ConfEnv
+loop :: ConfState
 loop = do
       env <- get
       -- Clear screen
@@ -150,10 +152,8 @@ loop = do
       event <- liftIO waitEventBlocking  
       if not (isEmpty $ imageList env) 
       then checkEvent event >> loop
-      else return env
+      else return ()
 
-main :: IO (Config, Config)        
-main = withInit [InitEverything] $ do
-         env <- initEnv
-       -- TTFG.init >> loop env
-         runStateT loop env
+main :: IO ()        
+main = withInit [InitEverything] $ initEnv >>= (runStateT loop) >> return ()
+

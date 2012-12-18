@@ -31,4 +31,4 @@ data Config = Config {
       infoText        :: Bool
 }
 
-type ConfEnv = StateT Config IO Config 
+type ConfState = StateT Config IO ()
