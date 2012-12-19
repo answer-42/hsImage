@@ -7,9 +7,6 @@ import Control.Monad (forM)
 
 import Data.List (isSuffixOf)
 
-filterm :: Monad m => (a -> Bool) -> m [a] -> m [a]
-filterm p x = x >>= \xs -> return $ filter p xs
-
 imageExtensions = [".jpg",".png"]
 
 -- Traverse Files
@@ -36,5 +33,8 @@ getImages arg = do
   then filterm isImage $ getRecursiveFiles arg
   else return $ filter isImage $ words arg
     where
+      filterm :: Functor f => (a -> Bool) -> f [a] -> f [a]
+      filterm = fmap . filter
+
       isImage :: String -> Bool
       isImage s = any (`isSuffixOf` s) imageExtensions
