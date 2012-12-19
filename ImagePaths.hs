@@ -21,7 +21,7 @@ getRecursiveFiles topdir = do
                              if isDirectory
                              then getRecursiveFiles path
                              else return [path]
-  return (concat paths)
+  return $ concat paths
 
 {-- WARNING: getImages builds a list of all files recursivley, and then it 
              retrieves the images. A better algorithm is needed if you have
