@@ -4,6 +4,7 @@ import System.Directory (doesDirectoryExist, getDirectoryContents)
 import System.FilePath ((</>), takeExtension)
 
 import Control.Monad (forM)
+import Control.Applicative ((<$>))
 
 import Data.List (isSuffixOf)
 
@@ -30,11 +31,8 @@ getImages :: String -> IO [String]
 getImages arg = do
   isDirectory <- doesDirectoryExist arg
   if isDirectory
-  then filterm isImage $ getRecursiveFiles arg
+  then filter isImage <$> getRecursiveFiles arg
   else return $ filter isImage $ words arg
     where
-      filterm :: Functor f => (a -> Bool) -> f [a] -> f [a]
-      filterm = fmap . filter
-
       isImage :: String -> Bool
       isImage s = any (`isSuffixOf` s) imageExtensions

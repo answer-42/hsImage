@@ -17,7 +17,8 @@ import Graphics.UI.SDL.Rotozoomer
 import System.Environment (getArgs)
 import System.FilePath (takeFileName)
 
-import Control.Monad (mapM, liftM, unless)
+import Control.Monad (mapM, unless)
+import Control.Applicative ((<$>))
 import Control.Monad.State.Lazy
 
 --import Control.Monad.Identity
@@ -122,7 +123,7 @@ initEnv :: IO Config
 initEnv = do
   args      <- getArgs
   screen    <- setVideoMode windowWidth windowheight screenBpp [Resizable]
-  imageList <- liftM (fromList . concat) $ mapM getImages args
+  imageList <- fromList . concat <$> mapM getImages args
   let windowW = surfaceGetWidth screen
       windowH = surfaceGetHeight screen
   image     <- loadImage $ fromJust $ focus imageList                    
