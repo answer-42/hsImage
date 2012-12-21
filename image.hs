@@ -32,6 +32,10 @@ import ImageConfig
 loadImage :: String -> IO Surface
 loadImage filename = load filename >>= displayFormat 
 
+
+{- TODO
+   Add proper error handling for fromJust.
+-}
 loadCurrentImage :: Config -> IO Surface
 loadCurrentImage = loadImage . fromJust . focus . imageList
 
@@ -135,8 +139,7 @@ initEnv = do
 loop :: ConfState
 loop = do
       env <- get
-      -- Clear screen
-      liftIO (fillRect (screen env) Nothing (Pixel 0) 
+      liftIO (fillRect (screen env) Nothing (Pixel 0)  -- Clear screen
               >> uncurry applySurface (offset env) (currentImage env) (screen env)
               -- Here we will put info text etc.
               >> Graphics.UI.SDL.flip (screen env))
