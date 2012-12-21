@@ -32,10 +32,13 @@ import ImageConfig
 loadImage :: String -> IO Surface
 loadImage filename = load filename >>= displayFormat 
 
+loadCurrentImage :: Config -> IO Surface
+loadCurrentImage = loadImage . fromJust . focus . imageList
+
 loadAdjustedImage :: ConfState
 loadAdjustedImage = do
   env <- get
-  oldImage <- liftIO $ loadImage . fromJust . focus . imageList $ env
+  oldImage <- liftIO $ loadCurrentImage env
   case viewMode env of     
     Fit             -> let ratio = fitImageRatio env{currentImage = oldImage}
                        in liftIO (zoom oldImage ratio ratio False) >>= \i -> put env{currentImage = i}
@@ -72,7 +75,7 @@ fitImage = do env <- get
 
 fullImage :: ConfState
 fullImage = do env <- get
-               i   <- liftIO $ loadImage (fromJust . focus . imageList $ env)
+               i   <- liftIO $ loadCurrentImage env
                put env{viewMode = Full, currentImage = i}
 
 zoomWith :: (Double -> Double -> Double) -> ConfState
