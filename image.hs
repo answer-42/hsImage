@@ -21,6 +21,8 @@ import Control.Monad (mapM, unless)
 import Control.Applicative ((<$>))
 import Control.Monad.State.Lazy
 
+import Control.Arrow ((***))
+
 --import Control.Monad.Identity
 
 import Data.CircularList
@@ -31,7 +33,6 @@ import ImageConfig
 
 loadImage :: String -> IO Surface
 loadImage filename = load filename >>= displayFormat 
-
 
 {- TODO
    Add proper error handling for fromJust.
@@ -53,29 +54,32 @@ applySurface :: Int -> Int -> Surface -> Surface -> IO Bool
 applySurface x y src dst = blitSurface src Nothing dst offset
  where offset = Just Rect { rectX = x, rectY = y, rectW = 0, rectH = 0 }
 
+
+-- Fit image
 fitImageRatio :: Config -> Double
 fitImageRatio env = if ratio1 < ratio2 then ratio1 else ratio2
     where
       intDiv :: Int -> Int -> Double
-      intDiv x y = fromIntegral (x `div` y)
+      intDiv x y = fromIntegral x / fromIntegral y
       image  = currentImage env      
       ratio1 = windowW env `intDiv` surfaceGetWidth image
       ratio2 = windowH env `intDiv` surfaceGetHeight image
-
-changeImage :: (CList String -> CList String) -> ConfState
-changeImage op = get >>= \env -> put env{imageList = op $ imageList env, offset = (0,0)}
-                 >> loadAdjustedImage 
-
-resize :: Int -> Int -> ConfState
-resize w h = do env <- get 
-                s   <- liftIO $ setVideoMode w h screenBpp [Resizable] 
-                put env{windowW = w, windowH = h, screen  = s}
 
 fitImage :: ConfState
 fitImage = do env <- get
               let ratio = fitImageRatio env
               i   <- liftIO $ zoom (currentImage env) ratio ratio False
               put env{viewMode = Fit, currentImage = i, offset = (0,0)} 
+
+-- changeImage
+changeImage :: (CList String -> CList String) -> ConfState
+changeImage op = modify (\env -> env{imageList = op $ imageList env, offset = (0,0) }) 
+                      >> loadAdjustedImage
+
+resize :: Int -> Int -> ConfState
+resize w h = do env <- get 
+                s   <- liftIO $ setVideoMode w h screenBpp [Resizable] 
+                put env{windowW = w, windowH = h, screen  = s}
 
 fullImage :: ConfState
 fullImage = do env <- get
@@ -92,14 +96,10 @@ zoomWith op = do env <- get
                    _   -> put env{viewMode = Zoom 1 (currentImage env)} >> zoomWith op 
 
 moveHor :: (Int -> Int -> Int) -> ConfState
-moveHor op = get >>= \env -> let oldOffset = offset env
-                             in put env{offset = (fst oldOffset `op` moveStep, snd oldOffset)}
+moveHor op = modify (\env -> env{offset = (`op`moveStep) *** id $ offset env})
 
 moveVer :: (Int -> Int -> Int) -> ConfState
-moveVer op = get >>= \env -> let oldOffset = offset env
-                                 newOffset = (fst oldOffset, snd oldOffset `op` moveStep)
-                                 -- TODO Add Check
-                             in put env{offset = newOffset} 
+moveVer op = modify (\env -> env{offset = id *** (`op`moveStep) $ offset env})
 
 -- switchInfo :: IO Config
 -- switchInfo = ask >>= \env -> return env{infoText = not $ infoText env}

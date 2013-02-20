@@ -8,7 +8,7 @@ import Control.Applicative ((<$>))
 
 import Data.List (isSuffixOf)
 
-imageExtensions = [".jpg",".png"]
+imageExtensions = [".jpg",".png", ".JPG"]
 
 -- Traverse Files
 getRecursiveFiles :: String -> IO [String]
