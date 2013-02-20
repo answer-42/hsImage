@@ -10,9 +10,9 @@ import Graphics.UI.SDL
 import Graphics.UI.SDL.Image
 import Graphics.UI.SDL.Rotozoomer
 
--- import qualified Graphics.UI.SDL.TTF.General as TTFG
--- import Graphics.UI.SDL.TTF.Management
--- import Graphics.UI.SDL.TTF.Render
+import qualified Graphics.UI.SDL.TTF.General as TTFG
+import Graphics.UI.SDL.TTF.Management
+import Graphics.UI.SDL.TTF.Render
 
 import System.Environment (getArgs)
 import System.FilePath (takeFileName)
@@ -21,7 +21,7 @@ import Control.Monad (mapM, unless)
 import Control.Applicative ((<$>))
 import Control.Monad.State.Lazy
 
-import Control.Arrow ((***))
+import Control.Arrow (first,second)
 
 --import Control.Monad.Identity
 
@@ -31,15 +31,9 @@ import Data.Maybe
 import ImagePaths (getImages)
 import ImageConfig
 
-loadImage :: String -> IO Surface
-loadImage filename = load filename >>= displayFormat 
-
 {- TODO
    Add proper error handling for fromJust.
 -}
-loadCurrentImage :: Config -> IO Surface
-loadCurrentImage = loadImage . fromJust . focus . imageList
-
 loadAdjustedImage :: ConfState
 loadAdjustedImage = do
   env <- get
@@ -53,7 +47,6 @@ loadAdjustedImage = do
 applySurface :: Int -> Int -> Surface -> Surface -> IO Bool
 applySurface x y src dst = blitSurface src Nothing dst offset
  where offset = Just Rect { rectX = x, rectY = y, rectW = 0, rectH = 0 }
-
 
 -- Fit image
 fitImageRatio :: Config -> Double
@@ -72,9 +65,13 @@ fitImage = do env <- get
               put env{viewMode = Fit, currentImage = i, offset = (0,0)} 
 
 -- changeImage
+
 changeImage :: (CList String -> CList String) -> ConfState
-changeImage op = modify (\env -> env{imageList = op $ imageList env, offset = (0,0) }) 
-                      >> loadAdjustedImage
+changeImage op = do env <- get
+                    liftIO $ Graphics.UI.SDL.freeSurface (currentImage env)
+                    liftIO $ Graphics.UI.SDL.freeSurface (screen env)
+                    put env{imageList = op $ imageList env, offset = (0,0) } 
+                    loadAdjustedImage
 
 resize :: Int -> Int -> ConfState
 resize w h = do env <- get 
@@ -96,10 +93,10 @@ zoomWith op = do env <- get
                    _   -> put env{viewMode = Zoom 1 (currentImage env)} >> zoomWith op 
 
 moveHor :: (Int -> Int -> Int) -> ConfState
-moveHor op = modify (\env -> env{offset = (`op`moveStep) *** id $ offset env})
+moveHor op = modify (\env -> env{offset = first (`op` moveStep) $ offset env})
 
 moveVer :: (Int -> Int -> Int) -> ConfState
-moveVer op = modify (\env -> env{offset = id *** (`op`moveStep) $ offset env})
+moveVer op = modify (\env -> env{offset = second (`op`moveStep) $ offset env})
 
 -- switchInfo :: IO Config
 -- switchInfo = ask >>= \env -> return env{infoText = not $ infoText env}
@@ -133,7 +130,7 @@ initEnv = do
   imageList <- fromList . concat <$> mapM getImages args
   let windowW = surfaceGetWidth screen
       windowH = surfaceGetHeight screen
-  image     <- loadImage $ fromJust $ focus imageList                    
+  image     <- getImage imageList                    
   return $ Config screen imageList image windowW windowH Full (0,0) False
 
 loop :: ConfState
@@ -161,5 +158,20 @@ loop = do
 
        
 main :: IO ()        
-main = withInit [InitEverything] $ void (initEnv >>= runStateT loop)
+main = withInit [] 
+          $ void (initEnv >>= runStateT loop)
+
+-- Helpers
+
+loadImage :: String -> IO Surface
+loadImage filename = load filename >>= displayFormat 
+
+getImage :: CList String -> IO Surface
+getImage = loadImage . imageFromMaybe . focus
+  where imageFromMaybe :: Maybe a -> a
+        imageFromMaybe (Just i) = i
+        imageFromMaybe Nothing  = error "No image loaded" 
+
+loadCurrentImage :: Config -> IO Surface
+loadCurrentImage = getImage . imageList
 
