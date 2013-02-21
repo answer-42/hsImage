@@ -45,7 +45,7 @@ loadAdjustedImage = do
     _               -> put env{currentImage = oldImage}
 
 applySurface :: Int -> Int -> Surface -> Surface -> IO Bool
-applySurface x y src dst = blitSurface src Nothing dst offset
+applySurface x y src dst = blitSurface src Nothing dst offset 
  where offset = Just Rect { rectX = x, rectY = y, rectW = 0, rectH = 0 }
 
 -- Fit image
@@ -67,11 +67,8 @@ fitImage = do env <- get
 -- changeImage
 
 changeImage :: (CList String -> CList String) -> ConfState
-changeImage op = do env <- get
-                    liftIO $ Graphics.UI.SDL.freeSurface (currentImage env)
-                    liftIO $ Graphics.UI.SDL.freeSurface (screen env)
-                    put env{imageList = op $ imageList env, offset = (0,0) } 
-                    loadAdjustedImage
+changeImage op = modify (\env -> env{imageList = op $ imageList env, offset = (0,0) })
+                        >> loadAdjustedImage
 
 resize :: Int -> Int -> ConfState
 resize w h = do env <- get 
